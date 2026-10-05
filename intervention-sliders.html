@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Does our intervention work?</title>
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --text: #1a1d21; --muted: #6b7280; --line: #e5e7eb; --accent: #0b7a5a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111315; --card: #1a1d21; --text: #e8eaed; --muted: #9aa0a6; --line: #2a2e33; --accent: #4cc79f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 1.6rem; margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px 20px; }
+  .field { display: block; padding: 14px 0; }
+  .field + .field { border-top: 1px solid var(--line); }
+  .head { display: flex; justify-content: space-between; gap: 12px; }
+  .head output { font-weight: 700; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; margin: 10px 0 0; accent-color: var(--accent); height: 24px; }
+  .seg { display: flex; gap: 8px; margin-top: 8px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  .seg button { flex: 1; }
+  .seg button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #result { font-size: 1.5rem; font-weight: 700; text-align: center; margin: 28px 0; }
+  #result b { color: var(--accent); }
+  .example { text-align: center; }
+  #exampleText { color: var(--muted); margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Does our intervention work?</h1>
+
+  <div class="card">
+    <label class="field">
+      <span class="head">Outcome without intervention <output id="p2v"></output></span>
+      <input type="range" id="p2" min="1" max="99" value="40">
+    </label>
+    <label class="field">
+      <span class="head">Outcome with intervention <output id="p1v"></output></span>
+      <input type="range" id="p1" min="1" max="99" value="60">
+    </label>
+    <div class="field">
+      <span class="head">Power</span>
+      <div class="seg" id="power">
+        <button data-z="0.8416" aria-pressed="true">80%</button>
+        <button data-z="1.2816" aria-pressed="false">90%</button>
+      </div>
+    </div>
+    <label class="field">
+      <span class="head">Drop-out <output id="dropv"></output></span>
+      <input type="range" id="drop" min="0" max="50" value="10">
+    </label>
+  </div>
+
+  <p id="result" aria-live="polite"></p>
+
+  <div class="example">
+    <button id="example">Try an example</button>
+    <p id="exampleText" hidden>A text-message reminder raises second-dose returns from 40% to 60%.</p>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const powerButtons = document.querySelectorAll("#power button");
+
+// Participants per group to compare two proportions (two-sided, 5% significance).
+function perGroup(p1, p2, zb, drop) {
+  const pbar = (p1 + p2) / 2;
+  const n = (1.96 * Math.sqrt(2 * pbar * (1 - pbar)) + zb * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2))) ** 2 / (p1 - p2) ** 2;
+  return Math.ceil(n / (1 - drop) - 1e-9);
+}
+
+function update() {
+  const p2 = +$("p2").value, p1 = +$("p1").value, drop = +$("drop").value;
+  const zb = +document.querySelector("#power [aria-pressed=true]").dataset.z;
+  $("p2v").textContent = p2 + "%";
+  $("p1v").textContent = p1 + "%";
+  $("dropv").textContent = drop + "%";
+
+  if (p1 === p2) {
+    $("result").textContent = "The groups must differ.";
+    return;
+  }
+  const n = perGroup(p1 / 100, p2 / 100, zb, drop / 100);
+  const fmt = x => x.toLocaleString("en");
+  $("result").innerHTML = `You need <b>${fmt(n)} participants per group</b> (${fmt(n * 2)} in total).`;
+}
+
+function setPower(btn) {
+  powerButtons.forEach(b => b.setAttribute("aria-pressed", b === btn));
+  update();
+}
+
+["p1", "p2", "drop"].forEach(id => $(id).addEventListener("input", update));
+powerButtons.forEach(b => b.addEventListener("click", () => setPower(b)));
+$("example").addEventListener("click", () => {
+  $("p2").value = 40; $("p1").value = 60; $("drop").value = 10;
+  $("exampleText").hidden = false;
+  setPower(powerButtons[0]);
+});
+
+update();
+</script>
+</body>
+</html>
