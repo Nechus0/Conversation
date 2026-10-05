@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Does It Work Better?</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1a1d21; --muted: #6b7280; --line: #e5e7eb;
+    --accent: #0b7a5a; --accent-soft: #e6f4ef; --warn: #9a3412; --warn-soft: #fff4ed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111315; --card: #1a1d21; --text: #e8eaed; --muted: #9aa0a6; --line: #2a2e33;
+            --accent: #4cc79f; --accent-soft: #15302a; --warn: #fdba74; --warn-soft: #2a1d14; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 1.7rem; margin: 0; }
+  .lead { color: var(--muted); margin: 6px 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+  .example { font-size: .95rem; color: var(--muted); }
+  .example b { color: var(--text); }
+  label { display: block; font-weight: 600; margin-top: 18px; }
+  label:first-child { margin-top: 0; }
+  .hint { color: var(--muted); font-size: .85rem; font-weight: 400; display: block; }
+  .row { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  .val { min-width: 92px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .seg { display: flex; gap: 8px; margin-top: 6px; }
+  .seg button { flex: 1; }
+  button { font: inherit; border-radius: 10px; padding: 10px 14px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  .seg button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; width: 100%; margin-top: 16px; }
+  .result { background: var(--accent-soft); border-color: transparent; text-align: center; }
+  .big { font-size: 1.5rem; font-weight: 700; margin: 0; }
+  .big span { color: var(--accent); }
+  .why { color: var(--muted); margin: 8px 0 0; font-size: .95rem; }
+  .warn { background: var(--warn-soft); color: var(--warn); }
+  footer { color: var(--muted); font-size: .8rem; text-align: center; margin-top: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Does It Work Better?</h1>
+  <p class="lead">Find out how many people you need to fairly compare a group that gets something new with a group that doesn't.</p>
+
+  <div class="card example">
+    <b>Example:</b> Does a text-message reminder help more parents bring their child back for the second vaccine dose?
+    Without a reminder, 4 in 10 parents come back. With a reminder, we hope for 6 in 10.
+    <button class="primary" id="example">Try the example</button>
+  </div>
+
+  <div class="card">
+    <label for="p2">Without the new idea: how many out of 100 have the outcome?
+      <span class="hint">A guess from past records is fine.</span></label>
+    <div class="row"><input type="range" id="p2" min="1" max="99" value="40"><span class="val" id="p2v"></span></div>
+
+    <label for="p1">With the new idea: how many out of 100 do you hope for?
+      <span class="hint">Be realistic. Smaller differences need more people.</span></label>
+    <div class="row"><input type="range" id="p1" min="1" max="99" value="60"><span class="val" id="p1v"></span></div>
+
+    <label>If it really works, how sure should you be to notice?
+      <span class="hint">Called "power". 80% is the usual choice.</span></label>
+    <div class="seg" id="power">
+      <button data-z="0.8416" aria-pressed="true">8 in 10 (80%)</button>
+      <button data-z="1.2816" aria-pressed="false">9 in 10 (90%)</button>
+    </div>
+
+    <label for="drop">How many will drop out or can't be reached?
+      <span class="hint">People move or change phone numbers, so we add extra.</span></label>
+    <div class="row"><input type="range" id="drop" min="0" max="50" value="10"><span class="val" id="dropv"></span></div>
+  </div>
+
+  <div class="card result" id="result" aria-live="polite">
+    <p class="big" id="big"></p>
+    <p class="why" id="why"></p>
+  </div>
+
+  <footer>A learning aid, not a substitute for a statistician. Two-sided test, 5% significance level.</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let who = "parents";
+
+// n per group for comparing two proportions (two-sided alpha = 5%).
+function perGroup(p1, p2, zb, drop) {
+  const pbar = (p1 + p2) / 2;
+  const n = (1.96 * Math.sqrt(2 * pbar * (1 - pbar)) + zb * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2))) ** 2 / (p1 - p2) ** 2;
+  return { raw: n, final: Math.ceil(n / (1 - drop) - 1e-9) };
+}
+
+function update() {
+  const p2 = +$("p2").value, p1 = +$("p1").value, drop = +$("drop").value;
+  const zb = +document.querySelector("#power [aria-pressed=true]").dataset.z;
+  $("p2v").textContent = p2 + "%";
+  $("p1v").textContent = p1 + "%";
+  $("dropv").textContent = drop + "%";
+
+  const box = $("result");
+  if (p1 === p2) {
+    box.classList.add("warn");
+    $("big").textContent = "Both groups are the same.";
+    $("why").textContent = "There's no difference to find. Move one of the sliders.";
+    return;
+  }
+  box.classList.remove("warn");
+  const n = perGroup(p1 / 100, p2 / 100, zb, drop / 100);
+  const fmt = x => x.toLocaleString("en");
+  $("big").innerHTML = `You need <span>${fmt(n.final)} ${who} per group</span> (${fmt(n.final * 2)} in total).`;
+  $("why").textContent = `To spot a change from ${p2} to ${p1} out of 100, you need about ${fmt(Math.ceil(n.raw))} per group` +
+    (drop ? `, plus extra because ${drop}% may drop out.` : ".") +
+    (Math.abs(p1 - p2) < 10 ? " Small differences need many more people." : "");
+}
+
+// Moving a slider means it's the user's own study, so speak of "people".
+["p1", "p2", "drop"].forEach(id => $(id).addEventListener("input", () => { who = "people"; update(); }));
+document.querySelectorAll("#power button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#power button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  update();
+}));
+$("example").addEventListener("click", () => {
+  $("p2").value = 40; $("p1").value = 60; $("drop").value = 10;
+  document.querySelectorAll("#power button").forEach((x, i) => x.setAttribute("aria-pressed", i === 0));
+  who = "parents";
+  update();
+  $("result").scrollIntoView({ behavior: "smooth", block: "center" });
+});
+
+update();
+</script>
+</body>
+</html>
