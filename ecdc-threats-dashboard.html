@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ECDC Threats Dashboard</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1a1d21; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #0b5cad; --accent-soft: #e8f1fb; --warn: #9a3412; --warn-soft: #fff4ed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111315; --card: #1a1d21; --text: #e8eaed; --muted: #9aa0a6;
+      --line: #2a2e33; --accent: #6aa9ec; --accent-soft: #1b2a3a; --warn: #fdba74; --warn-soft: #2a1d14;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 1.4rem; margin: 0; }
+  .sub { color: var(--muted); font-size: .9rem; margin-top: 2px; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 10px 18px; cursor: pointer;
+           background: var(--accent); color: #fff; font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
+  button:disabled { opacity: .6; cursor: progress; }
+  .spin { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+          border-radius: 50%; animation: r .8s linear infinite; display: none; }
+  button:disabled .spin { display: inline-block; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 24px 0; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .tile .k { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  .tile .v { font-size: 1.5rem; font-weight: 700; margin-top: 4px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .card h2 { font-size: 1.05rem; margin: 0 0 4px; }
+  ol { margin: 12px 0 0; padding: 0; list-style: none; counter-reset: n; }
+  ol li { counter-increment: n; padding: 10px 0 10px 40px; border-top: 1px solid var(--line); position: relative; }
+  ol li:first-child { border-top: 0; }
+  ol li::before { content: counter(n); position: absolute; left: 0; top: 10px; width: 26px; height: 26px;
+                  border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+                  font-size: .8rem; font-weight: 700; display: grid; place-items: center; }
+  .links { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px; font-size: .9rem; }
+  a { color: var(--accent); }
+  .note { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 10px 14px;
+          font-size: .9rem; margin-bottom: 16px; display: none; }
+  .empty { color: var(--muted); text-align: center; padding: 32px 0; }
+  footer { color: var(--muted); font-size: .8rem; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Epidemic Intelligence · ECDC Weekly Threats</h1>
+      <div class="sub" id="updated">Not loaded yet</div>
+    </div>
+    <button id="refresh"><span class="spin"></span><span>Refresh</span></button>
+  </header>
+
+  <div class="tiles">
+    <div class="tile"><div class="k">Week</div><div class="v" id="t-week">–</div></div>
+    <div class="tile"><div class="k">Reporting period</div><div class="v" id="t-period" style="font-size:1.05rem">–</div></div>
+    <div class="tile"><div class="k">Published</div><div class="v" id="t-pub" style="font-size:1.05rem">–</div></div>
+    <div class="tile"><div class="k">Topics this week</div><div class="v" id="t-count">–</div></div>
+  </div>
+
+  <div class="note" id="note"></div>
+
+  <div class="card">
+    <h2 id="title">Latest Communicable Disease Threats Report</h2>
+    <div class="sub">Headlines</div>
+    <ol id="topics"><li class="empty" style="padding-left:0">Press <b>Refresh</b> to load the latest report.</li></ol>
+    <div class="links" id="links"></div>
+  </div>
+
+  <footer>
+    Source: <a href="https://www.ecdc.europa.eu/en/publications-and-data/monitoring/weekly-threats-reports" target="_blank" rel="noopener">ECDC Communicable Disease Threats Report (CDTR)</a>.
+    Proof of concept: headlines only, always read the original report.
+  </footer>
+</div>
+
+<script>
+const BASE = "https://www.ecdc.europa.eu";
+const LIST_URL = BASE + "/en/publications-and-data/monitoring/weekly-threats-reports";
+const CACHE_KEY = "ecdc-cdtr-latest";
+
+// ECDC does not send CORS headers, so a browser page cannot read it directly.
+// Try a direct request first, then public CORS proxies in order.
+const ROUTES = [
+  u => u,
+  u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+  u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+  u => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u),
+];
+let workingRoute = 0;
+
+async function fetchWithTimeout(url, ms) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    if (!text.includes("ecdc")) throw new Error("Unexpected response");
+    return text;
+  } finally { clearTimeout(timer); }
+}
+
+async function getHtml(url) {
+  // Start with the route that worked last time to keep refreshes fast.
+  const order = [workingRoute, ...ROUTES.keys()].filter((v, i, a) => a.indexOf(v) === i);
+  let lastErr;
+  for (const i of order) {
+    try {
+      const html = await fetchWithTimeout(ROUTES[i](url), 7000);
+      workingRoute = i;
+      return new DOMParser().parseFromString(html, "text/html");
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("No route worked");
+}
+
+const abs = href => new URL(href, BASE).href;
+const clean = s => (s || "").replace(/\s+/g, " ").trim();
+
+function parseTitle(title) {
+  const week = (title.match(/week\s*(\d{1,2})/i) || [])[1] || "";
+  const period = clean((title.match(/report,\s*(.+?),\s*week/i) || [])[1] || "");
+  const year = (title.match(/(20\d\d)/) || [])[1] || "";
+  return { week, period, year };
+}
+
+function findLatestReport(doc) {
+  const seen = new Map();
+  doc.querySelectorAll('a[href*="communicable-disease-threats-report-"]').forEach(a => {
+    const href = abs(a.getAttribute("href"));
+    if (href.endsWith(".pdf") || seen.has(href)) return;
+    const slug = href.split("/").pop();
+    const week = +((slug.match(/week-(\d+)/) || [])[1] || 0);
+    const year = +((slug.match(/(20\d\d)/) || [])[1] || 0);
+    if (!week || !year) return;
+    seen.set(href, { href, week, year, text: clean(a.textContent) });
+  });
+  const list = [...seen.values()].sort((a, b) => b.year - a.year || b.week - a.week);
+  if (!list.length) throw new Error("No reports found on the ECDC listing page");
+  return list[0];
+}
+
+function extractTopics(doc) {
+  const main = doc.querySelector("main, article, #main-content, .region-content") || doc.body;
+  const isNoise = t => !t || t.length < 4 || t.length > 220 ||
+    /cookie|subscribe|share|download|follow us|privacy|menu|search/i.test(t);
+
+  // 1) A list right after a "topics" / "this week" heading or paragraph.
+  for (const el of main.querySelectorAll("h2, h3, h4, p, strong")) {
+    if (/this week|topics|overview|executive summary/i.test(el.textContent)) {
+      let sib = el.closest("p, h2, h3, h4") || el;
+      for (let i = 0; i < 4 && sib; i++) {
+        sib = sib.nextElementSibling;
+        if (sib && /^(UL|OL)$/.test(sib.tagName)) {
+          const items = [...sib.querySelectorAll("li")].map(li => clean(li.textContent)).filter(t => !isNoise(t));
+          if (items.length) return items;
+        }
+      }
+    }
+  }
+  // 2) Any list in the main content.
+  for (const list of main.querySelectorAll("ul, ol")) {
+    if (list.closest("nav, header, footer, aside")) continue;
+    const items = [...list.querySelectorAll(":scope > li")].map(li => clean(li.textContent)).filter(t => !isNoise(t));
+    if (items.length >= 2) return items;
+  }
+  // 3) Topics written inline, e.g. "This week's topics: Ebola; measles; dengue".
+  const text = clean(main.textContent);
+  const m = text.match(/(?:this week[’']?s? topics|topics covered)[:\s]+(.{10,600}?)(?:\.\s|$)/i);
+  if (m) return m[1].split(/;|,| and /).map(clean).filter(t => !isNoise(t));
+  return [];
+}
+
+function extractMeta(doc) {
+  const meta = n => doc.querySelector(`meta[property="${n}"], meta[name="${n}"]`)?.content;
+  const time = doc.querySelector("time[datetime]")?.getAttribute("datetime") || meta("article:published_time") || meta("dcterms.date");
+  const pdf = doc.querySelector('a[href$=".pdf"]');
+  return {
+    published: time ? new Date(time) : null,
+    pdf: pdf ? abs(pdf.getAttribute("href")) : null,
+    title: clean(doc.querySelector("h1")?.textContent) || meta("og:title") || "",
+  };
+}
+
+function render(r, fromCache) {
+  const $ = id => document.getElementById(id);
+  $("title").textContent = r.title;
+  $("t-week").textContent = r.week ? `${r.week} / ${r.year}` : "–";
+  $("t-period").textContent = r.period || "–";
+  $("t-pub").textContent = r.published ? new Date(r.published).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "–";
+  $("t-count").textContent = r.topics.length || "–";
+  $("topics").innerHTML = r.topics.length
+    ? r.topics.map(t => `<li>${t.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]))}</li>`).join("")
+    : `<li class="empty" style="padding-left:0">No headlines could be extracted. Open the full report below.</li>`;
+  $("links").innerHTML = `<a href="${r.url}" target="_blank" rel="noopener">Open report page ↗</a>` +
+    (r.pdf ? `<a href="${r.pdf}" target="_blank" rel="noopener">Download PDF ↗</a>` : "");
+  $("updated").textContent = (fromCache ? "Showing saved copy from " : "Last updated: ") +
+    new Date(r.fetchedAt).toLocaleString();
+}
+
+function showNote(msg) {
+  const n = document.getElementById("note");
+  n.style.display = msg ? "block" : "none";
+  n.innerHTML = msg || "";
+}
+
+async function refresh() {
+  const btn = document.getElementById("refresh");
+  btn.disabled = true;
+  showNote("");
+  try {
+    const latest = findLatestReport(await getHtml(LIST_URL));
+    const page = await getHtml(latest.href);
+    const meta = extractMeta(page);
+    const title = meta.title || latest.text;
+    const report = {
+      ...parseTitle(title), title, url: latest.href,
+      week: String(latest.week), year: String(latest.year),
+      published: meta.published, pdf: meta.pdf, topics: extractTopics(page),
+      fetchedAt: Date.now(),
+    };
+    if (!report.period) report.period = parseTitle(latest.text).period;
+    render(report, false);
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(report)); } catch {}
+  } catch (e) {
+    showNote(`Could not reach ECDC right now (${e.message}). ` +
+      `<a href="${LIST_URL}" target="_blank" rel="noopener">Open the reports on the ECDC website ↗</a>`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("refresh").addEventListener("click", refresh);
+
+// Show the last saved report instantly, if there is one.
+try {
+  const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+  if (cached) render(cached, true);
+} catch {}
+</script>
+</body>
+</html>
