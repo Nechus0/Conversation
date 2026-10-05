@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Does our intervention work?</title>
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --text: #1a1d21; --muted: #6b7280; --line: #e5e7eb; --accent: #0b7a5a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111315; --card: #1a1d21; --text: #e8eaed; --muted: #9aa0a6; --line: #2a2e33; --accent: #4cc79f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 1.6rem; margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .field { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; }
+  .field + .field { border-top: 1px solid var(--line); }
+  input { width: 90px; font: inherit; text-align: right; padding: 8px 10px; border-radius: 8px;
+          border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .seg { display: flex; gap: 6px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  .seg button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #result { font-size: 1.5rem; font-weight: 700; text-align: center; margin: 28px 0; }
+  #result b { color: var(--accent); }
+  .example { text-align: center; }
+  #exampleText { color: var(--muted); margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Does our intervention work?</h1>
+
+  <div class="card">
+    <label class="field">Outcome without intervention (%) <input type="number" id="p2" min="1" max="99" value="40"></label>
+    <label class="field">Outcome with intervention (%) <input type="number" id="p1" min="1" max="99" value="60"></label>
+    <div class="field">Power
+      <div class="seg" id="power">
+        <button data-z="0.8416" aria-pressed="true">80%</button>
+        <button data-z="1.2816" aria-pressed="false">90%</button>
+      </div>
+    </div>
+    <label class="field">Drop-out (%) <input type="number" id="drop" min="0" max="90" value="10"></label>
+  </div>
+
+  <p id="result" aria-live="polite"></p>
+
+  <div class="example">
+    <button id="example">Try an example</button>
+    <p id="exampleText" hidden>A text-message reminder raises second-dose vaccine returns from 40% to 60%.</p>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const powerButtons = document.querySelectorAll("#power button");
+
+function update() {
+  const p2 = $("p2").valueAsNumber / 100, p1 = $("p1").valueAsNumber / 100, drop = $("drop").valueAsNumber / 100;
+  const zb = +document.querySelector("#power [aria-pressed=true]").dataset.z;
+
+  if (![p1, p2].every(p => p > 0 && p < 1) || !(drop >= 0 && drop < 1)) {
+    $("result").textContent = "Enter percentages between 1 and 99.";
+    return;
+  }
+  if (p1 === p2) {
+    $("result").textContent = "The groups must differ.";
+    return;
+  }
+  const pbar = (p1 + p2) / 2;
+  const n = (1.96 * Math.sqrt(2 * pbar * (1 - pbar)) + zb * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2))) ** 2 / (p1 - p2) ** 2;
+  const perGroup = Math.ceil(n / (1 - drop) - 1e-9);
+  const fmt = x => x.toLocaleString("en");
+  $("result").innerHTML = `You need <b>${fmt(perGroup)} participants per group</b> (${fmt(perGroup * 2)} in total).`;
+}
+
+function setPower(btn) {
+  powerButtons.forEach(b => b.setAttribute("aria-pressed", b === btn));
+  update();
+}
+
+["p1", "p2", "drop"].forEach(id => $(id).addEventListener("input", update));
+powerButtons.forEach(b => b.addEventListener("click", () => setPower(b)));
+$("example").addEventListener("click", () => {
+  $("p2").value = 40; $("p1").value = 60; $("drop").value = 10;
+  $("exampleText").hidden = false;
+  setPower(powerButtons[0]);
+});
+
+update();
+</script>
+</body>
+</html>
